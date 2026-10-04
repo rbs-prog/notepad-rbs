@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1220">
+<title>Painel de Apuração</title>
+<style>
+  :root { --bg:#0b1220; --card:#141d31; --txt:#e8edf7; --mut:#8b97b3; --ok:#2fbf71; --warn:#f0b429; --bar:#3b82f6; --bd:#25314d; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f2f5fa; --card:#fff; --txt:#12203a; --mut:#5d6b88; --bd:#d9e0ee; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font-family:system-ui,sans-serif; padding:16px; max-width:640px; margin-inline:auto; }
+  h1 { font-size:20px; margin:4px 0 2px; }
+  .sub { color:var(--mut); font-size:13px; margin-bottom:14px; }
+  .card { background:var(--card); border:1px solid var(--bd); border-radius:14px; padding:14px; margin-bottom:12px; }
+  .cargo { color:var(--mut); font-size:12px; text-transform:uppercase; letter-spacing:.06em; }
+  .nome { font-size:18px; font-weight:600; margin:2px 0 10px; }
+  .row { display:flex; gap:16px; align-items:flex-end; flex-wrap:wrap; }
+  .big { font-size:34px; font-weight:700; line-height:1; }
+  .lbl { color:var(--mut); font-size:12px; margin-top:4px; }
+  .bar { height:8px; background:var(--bd); border-radius:99px; overflow:hidden; margin-top:12px; }
+  .bar > i { display:block; height:100%; background:var(--bar); width:0; transition:width .4s; }
+  .tag { display:inline-block; font-size:12px; padding:2px 8px; border-radius:99px; border:1px solid var(--bd); color:var(--mut); }
+  .tag.ok { color:var(--ok); border-color:var(--ok); }
+  .err { color:var(--warn); font-size:13px; }
+  .rank { font-size:13px; color:var(--mut); margin-top:10px; }
+  .rank div { display:flex; justify-content:space-between; padding:2px 0; }
+  .rank .me { color:var(--txt); font-weight:600; }
+  details { margin-top:14px; font-size:13px; color:var(--mut); }
+  input, button, select { font:inherit; padding:8px; border-radius:8px; border:1px solid var(--bd); background:var(--card); color:var(--txt); }
+  label { display:block; margin:8px 0 2px; }
+  pre { white-space:pre-wrap; font-size:11px; max-height:200px; overflow:auto; }
+</style>
+</head>
+<body>
+<h1>Painel de Apuração · SP</h1>
+<div class="sub" id="status">Carregando…</div>
+<div id="cards"></div>
+
+<details>
+  <summary>Configurações e diagnóstico</summary>
+  <label>Código da eleição (TSE) — deixe vazio para tentar descobrir sozinho
+    <input id="cd" inputmode="numeric" placeholder="ex.: 544">
+  </label>
+  <label>Atualizar a cada (segundos)
+    <input id="iv" inputmode="numeric" value="60">
+  </label>
+  <button id="salvar" style="margin-top:8px">Salvar e atualizar</button>
+  <pre id="log"></pre>
+</details>
+
+<script>
+const BASE = 'https://resultados.tse.gov.br/oficial';
+const ANO = 2026;
+// termos: todos precisam aparecer no nome de urna (sem acento, minúsculo)
+const CANDS = [
+  { cargo: 'Presidente',       cod: 1, uf: 'br', termos: ['flavio', 'bolsonaro'] },
+  { cargo: 'Governador (SP)',  cod: 3, uf: 'sp', termos: ['tarcisio'] },
+  { cargo: 'Dep. Federal (SP)',cod: 6, uf: 'sp', termos: ['orlando', 'morando'] },
+  { cargo: 'Dep. Estadual (SP)',cod: 7, uf: 'sp', termos: ['ivan', 'silva'] },
+];
+
+const $ = id => document.getElementById(id);
+const store = { get(k){ try { return localStorage.getItem(k); } catch { return null; } },
+                set(k,v){ try { localStorage.setItem(k,v); } catch {} } };
+const logs = [];
+const log = m => { logs.push(new Date().toLocaleTimeString() + ' ' + m); $('log').textContent = logs.slice(-40).join('\n'); };
+const norm = s => (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+const num = v => typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(/\./g,'').replace(',','.'));
+const fmt = n => isNaN(n) ? '—' : n.toLocaleString('pt-BR');
+const pad = (n,l) => String(n).padStart(l,'0');
+
+async function getJson(url) {
+  const r = await fetch(url, { cache: 'no-store' });
+  if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + url);
+  return r.json();
+}
+
+// percorre o JSON inteiro coletando objetos
+function walk(o, fn) {
+  if (Array.isArray(o)) o.forEach(x => walk(x, fn));
+  else if (o && typeof o === 'object') { fn(o); Object.values(o).forEach(x => walk(x, fn)); }
+}
+function findKey(o, key) {
+  let out; walk(o, x => { if (out === undefined && key in x) out = x[key]; }); return out;
+}
+
+async function descobrirEleicao() {
+  const manual = store.get('cd');
+  if (manual) return manual;
+  const cfg = await getJson(`${BASE}/comum/config/ele-c.json`);
+  const achados = [];
+  walk(cfg, x => {
+    const txt = norm(JSON.stringify(Object.values(x).filter(v => typeof v !== 'object')));
+    if (x.cd && txt.includes(String(ANO)) && /1.? turno|ordinaria|geral/.test(txt)) achados.push(x);
+  });
+  log('candidatas a eleição: ' + JSON.stringify(achados.slice(0,5)));
+  if (!achados.length) throw new Error('Não achei o código da eleição de ' + ANO + '. Informe-o em Configurações.');
+  return String(achados[0].cd);
+}
+
+function extrair(dados) {
+  const lista = [];
+  walk(dados, x => { if ('nm' in x && ('vap' in x || 'nv' in x) && ('n' in x || 'sqcand' in x)) lista.push(x); });
+  const pst = findKey(dados, 'pst');
+  return { lista, apurado: num(pst) };
+}
+
+async function buscar(c, cd) {
+  const url = `${BASE}/ele${ANO}/${cd}/dados-simplificados/${c.uf}/${c.uf}-c${pad(c.cod,4)}-e${pad(cd,6)}-r.json`;
+  const { lista, apurado } = extrair(await getJson(url));
+  if (!lista.length) throw new Error('Formato inesperado do JSON em ' + url);
+  const votos = x => num(x.vap ?? x.nv);
+  lista.sort((a,b) => votos(b) - votos(a));
+  const chave = store.get('sel_' + c.cargo);
+  let idx = chave ? lista.findIndex(x => String(x.sqcand ?? x.n) === chave) : -1;
+  if (idx < 0) {
+    const ach = lista.filter(x => c.termos.every(t => norm(x.nm).includes(t)));
+    if (ach.length === 1) idx = lista.indexOf(ach[0]);
+    else if (ach.length > 1) return { c, apurado, ambiguo: ach, votos };
+    else throw new Error('Candidato não encontrado na lista');
+  }
+  const total = lista.reduce((s,x) => s + (votos(x) || 0), 0);
+  return { c, apurado, lista, idx, votos, total };
+}
+
+function render(res) {
+  const el = document.createElement('div'); el.className = 'card';
+  const cab = `<div class="cargo">${res.c.cargo}</div>`;
+  if (res.erro) { el.innerHTML = cab + `<div class="err">${res.erro}</div>`; return el; }
+  if (res.ambiguo) {
+    el.innerHTML = cab + `<div class="nome">Qual é o seu candidato?</div>` +
+      `<select>${res.ambiguo.map(x => `<option value="${x.sqcand ?? x.n}">${x.nm} (${x.n})</option>`).join('')}</select> ` +
+      `<button>OK</button>`;
+    el.querySelector('button').onclick = () => { store.set('sel_' + res.c.cargo, el.querySelector('select').value); atualizar(); };
+    return el;
+  }
+  const m = res.lista[res.idx], v = res.votos(m);
+  const pct = res.total ? v / res.total * 100 : NaN;
+  const ap = res.apurado;
+  const eleito = String(m.e || '').toLowerCase().startsWith('s');
+  const ranking = res.lista.slice(0, 5).map((x,i) =>
+    `<div class="${i === res.idx ? 'me' : ''}"><span>${i+1}º ${x.nm}</span><span>${fmt(res.votos(x))}</span></div>`).join('') +
+    (res.idx >= 5 ? `<div class="me"><span>${res.idx+1}º ${m.nm}</span><span>${fmt(v)}</span></div>` : '');
+  el.innerHTML = cab + `<div class="nome">${m.nm} <span class="tag${eleito ? ' ok' : ''}">${eleito ? 'eleito' : 'nº ' + m.n}</span></div>
+    <div class="row">
+      <div><div class="big">${res.idx+1}º</div><div class="lbl">posição</div></div>
+      <div><div class="big">${isNaN(pct) ? '—' : pct.toFixed(2).replace('.',',') + '%'}</div><div class="lbl">${fmt(v)} votos</div></div>
+      <div><div class="big">${isNaN(ap) ? '—' : ap.toFixed(2).replace('.',',') + '%'}</div><div class="lbl">urnas apuradas</div></div>
+    </div>
+    <div class="bar"><i style="width:${isNaN(ap) ? 0 : ap}%"></i></div>
+    <div class="rank">${ranking}</div>`;
+  return el;
+}
+
+let timer;
+async function atualizar() {
+  clearTimeout(timer);
+  $('status').textContent = 'Atualizando…';
+  const box = $('cards'); const novos = [];
+  try {
+    const cd = await descobrirEleicao();
+    log('eleição ' + cd);
+    for (const c of CANDS) {
+      try { novos.push(render(await buscar(c, cd))); }
+      catch (e) { log(c.cargo + ': ' + e.message); novos.push(render({ c, erro: e.message })); }
+    }
+    $('status').textContent = 'Atualizado às ' + new Date().toLocaleTimeString('pt-BR') + ' · fonte: TSE';
+  } catch (e) {
+    log(e.message);
+    $('status').textContent = '';
+    novos.push(render({ c: { cargo: 'Erro' }, erro: e.message + ' (se for erro de rede/CORS, veja o diagnóstico)' }));
+  }
+  box.replaceChildren(...novos);
+  const s = Math.max(15, parseInt(store.get('iv') || '60', 10) || 60);
+  timer = setTimeout(atualizar, s * 1000);
+}
+
+$('cd').value = store.get('cd') || '';
+$('iv').value = store.get('iv') || '60';
+$('salvar').onclick = () => { store.set('cd', $('cd').value.trim()); store.set('iv', $('iv').value.trim()); atualizar(); };
+atualizar();
+</script>
+</body>
+</html>
