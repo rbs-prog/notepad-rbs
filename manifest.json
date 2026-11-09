@@ -1,6 +1,6 @@
 {
-  "name": "Bloco de Notas",
-  "short_name": "Notas",
+  "name": "Notepad RBS",
+  "short_name": "Notepad RBS",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#ffffff",
