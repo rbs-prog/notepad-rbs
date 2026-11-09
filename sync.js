@@ -41,4 +41,71 @@ Sync.isEmptyNote = function isEmptyNote(data) {
   return !pad;
 };
 
+// Cliente Supabase (Auth + PostgREST) sem supabase-js. fetch, storage e now são injetáveis para teste.
+Sync.createClient = function createClient({ url, key, fetch: f, storage, now }) {
+  const doFetch = f || ((...a) => fetch(...a));
+  const clock = now || (() => Date.now());
+  const SKEY = 'bn-sync';
+  const nowS = () => Math.floor(clock() / 1000);
+  const hdr = extra => ({ apikey: key, 'Content-Type': 'application/json', ...extra });
+  const read = () => { try { return JSON.parse(storage.getItem(SKEY) || 'null'); } catch (e) { return null; } };
+  const write = s => { try { storage.setItem(SKEY, JSON.stringify(s)); } catch (e) {} };
+  const clear = () => { try { storage.removeItem(SKEY); } catch (e) {} };
+  const errMsg = async r => {
+    try { const j = await r.json(); return j.msg || j.error_description || j.message || j.error || ('Erro ' + r.status); }
+    catch (e) { return 'Erro ' + r.status; }
+  };
+  const jwtUser = token => {
+    try {
+      const p = JSON.parse(b64urlDecode(token.split('.')[1]));
+      return { id: p.sub, email: p.email };
+    } catch (e) { return { id: '', email: '' }; }
+  };
+  const b64urlDecode = b => {
+    b = b.replace(/-/g, '+').replace(/_/g, '/');
+    const bin = typeof atob === 'function' ? atob(b + '==='.slice((b.length + 3) % 4)) : Buffer.from(b, 'base64').toString('binary');
+    return decodeURIComponent(Array.from(bin, c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join(''));
+  };
+  const client = {
+    async sendMagicLink(email, redirectTo) {
+      const r = await doFetch(url + '/auth/v1/otp?redirect_to=' + encodeURIComponent(redirectTo), {
+        method: 'POST', headers: hdr(), body: JSON.stringify({ email, create_user: true })
+      });
+      if (!r.ok) throw new Error(await errMsg(r));
+    },
+    consumeRedirect(hash) {
+      const p = new URLSearchParams(String(hash || '').replace(/^#/, ''));
+      const at = p.get('access_token'), rt = p.get('refresh_token');
+      if (!at || !rt) return null;
+      const session = { access_token: at, refresh_token: rt, expires_at: nowS() + (Number(p.get('expires_in')) || 3600), user: jwtUser(at) };
+      write(session);
+      return { session, cleanHash: '' };
+    },
+    session() { return read(); },
+    async ensureFresh() {
+      const s = read();
+      if (!s) return null;
+      if (s.expires_at - nowS() > 60) return s;
+      const r = await doFetch(url + '/auth/v1/token?grant_type=refresh_token', {
+        method: 'POST', headers: hdr(), body: JSON.stringify({ refresh_token: s.refresh_token })
+      });
+      if (r.status >= 400 && r.status < 500) { clear(); return null; }
+      if (!r.ok) throw new Error(await errMsg(r));
+      const j = await r.json();
+      const ns = { access_token: j.access_token, refresh_token: j.refresh_token || s.refresh_token, expires_at: nowS() + (Number(j.expires_in) || 3600), user: s.user };
+      write(ns);
+      return ns;
+    },
+    signOut() {
+      const s = read();
+      clear();
+      if (!s) return;
+      try {
+        Promise.resolve(doFetch(url + '/auth/v1/logout', { method: 'POST', headers: hdr({ Authorization: 'Bearer ' + s.access_token }) })).catch(() => {});
+      } catch (e) {}
+    }
+  };
+  return client;
+};
+
 if (typeof module !== 'undefined') module.exports = Sync; else window.Sync = Sync;
