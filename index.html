@@ -44,6 +44,11 @@
   #notesPanel header { flex: none; display: flex; gap: 8px; align-items: center; padding: 10px 12px; border-bottom: 1px solid #ddd; background: #f6f6f6; }
   #notesPanel header strong { flex: 1; font-size: 18px; }
   #notesPanel button { font-size: 15px; padding: 8px 12px; border: 1px solid #bbb; border-radius: 8px; background: #fff; }
+  #acct { flex: none; padding: 10px 12px; border-bottom: 1px solid #ddd; background: #fafafa; display: flex; flex-direction: column; gap: 6px; }
+  #acct input { font-size: 16px; padding: 8px; border: 1px solid #bbb; border-radius: 8px; width: 100%; }
+  #acct small { color: #666; }
+  #acct .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  #acct .row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #notesList { flex: 1; overflow-y: auto; }
   .nrow { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-bottom: 1px solid #eee; }
   .nrow.cur { background: #eaf2ff; }
@@ -123,6 +128,18 @@
 <div id="pop"></div>
 <div id="notesPanel">
   <header><strong>📚 Minhas notas</strong><button id="noteNew">＋ Nova</button><button id="noteClose">Fechar</button></header>
+  <div id="acct">
+    <div id="acctOut">
+      <strong>☁️ Sincronizar entre aparelhos</strong>
+      <input id="acctEmail" type="email" placeholder="seu e-mail" autocomplete="email">
+      <button id="acctSend">Enviar link de acesso</button>
+      <small>Abra o link no mesmo navegador/aparelho onde quer usar. Se o relógio dos aparelhos estiver diferente, a edição mais antiga pode vencer.</small>
+    </div>
+    <div id="acctIn" style="display:none">
+      <div class="row"><span id="acctWho"></span><button id="acctSync">Sincronizar agora</button><button id="acctExit">Sair</button></div>
+      <small id="acctStatus"></small>
+    </div>
+  </div>
   <div id="notesList"></div>
 </div>
 <div id="livePanel">
@@ -140,6 +157,7 @@
     </div>
   </div>
 </div>
+<script src="sync.js"></script>
 <script>
 const KEY = 'bloco-notas-v1', LIVE_KEY = 'bloco-notas-sala';
 // Chave pública (anon) do Supabase: feita para ficar no cliente. Só usamos Realtime Broadcast, sem acesso a tabelas.
@@ -214,7 +232,12 @@ const Store = {
   setIndex(a) { this.write(this.IDX, a); },
   get(id) { return this.read('bn-nota-' + id, null); },
   put(id, d) { this.write('bn-nota-' + id, d); },
-  del(id) { try { localStorage.removeItem('bn-nota-' + id); } catch (e) {} }
+  del(id) { try { localStorage.removeItem('bn-nota-' + id); } catch (e) {} },
+  // lápides: notas apagadas neste aparelho, para propagar a exclusão na sincronização
+  tombs() { return this.read('bn-apagadas', []); },
+  addTomb(id) { this.write('bn-apagadas', this.tombs().filter(t => t.id !== id).concat({ id, updated: Date.now() })); },
+  clearTombs(ids) { if (ids.length) this.write('bn-apagadas', this.tombs().filter(t => !ids.includes(t.id))); },
+  upsertMeta(m) { const idx = this.index().filter(n => n.id !== m.id); idx.push(m); this.setIndex(idx); }
 };
 let curId = null;
 const noteMeta = id => Store.index().find(n => n.id === id);
@@ -231,6 +254,7 @@ function saveNow() {
   Store.put(curId, { boxes: boxes.filter(b => b.text.trim()).map(b => ({ id: b.id, x: b.x, y: b.y, w: b.w, text: b.text, html: b.html })), strokes, pad: padEl.innerHTML });
   const idx = Store.index(), m = idx.find(n => n.id === curId);
   if (m) { m.updated = Date.now(); if (!m.custom) m.title = autoTitle(); Store.setIndex(idx); }
+  scheduleSync();
 }
 function save() {
   if (VIEWER) return;
@@ -242,6 +266,7 @@ function createNote(data) {
   idx.push({ id, title: 'Nota sem título', custom: false, updated: Date.now() });
   Store.setIndex(idx);
   Store.put(id, data || { boxes: [], strokes: [], pad: '' });
+  scheduleSync();
   return id;
 }
 function loadNote(id) {
@@ -978,25 +1003,103 @@ function renderNotes() {
       if (nv === null) return;
       const idx = Store.index(), m = idx.find(x => x.id === n.id);
       m.custom = !!nv.trim(); if (m.custom) m.title = nv.trim().slice(0, 60);
-      Store.setIndex(idx); if (n.id === curId) saveNow(); renderNotes();
+      m.updated = Date.now(); // a renomeação conta como edição para a sincronização
+      Store.setIndex(idx); if (n.id === curId) saveNow(); else scheduleSync(); renderNotes();
     };
     const del = document.createElement('button'); del.textContent = '🗑'; del.title = 'Apagar';
     del.onclick = () => {
       if (!confirm('Apagar a nota "' + n.title + '"? Não dá para desfazer.')) return;
       const wasCur = n.id === curId;
       if (wasCur) { clearTimeout(saveTimer); saveTimer = 0; }
-      Store.del(n.id); Store.setIndex(Store.index().filter(x => x.id !== n.id));
+      Store.del(n.id); Store.addTomb(n.id); Store.setIndex(Store.index().filter(x => x.id !== n.id)); scheduleSync();
       if (wasCur) { const rest = Store.index(); loadNote(rest.length ? rest.sort((a, b) => b.updated - a.updated)[0].id : createNote()); }
       renderNotes();
     };
     row.append(open, ren, del); list.appendChild(row);
   });
 }
+// ---------- sincronização entre aparelhos ----------
+// Notas gravam primeiro no aparelho; aqui elas sobem/descem do Supabase (vale a edição mais recente). Ver sync.js.
+// Se sync.js não carregar, o app segue funcionando só no aparelho (cloud = null).
+const cloud = typeof Sync !== 'undefined' ? Sync.createClient({ url: 'https://' + SUPA_HOST, key: SUPA_KEY, storage: localStorage }) : null;
+const syncStore = {
+  index: () => Store.index(), get: id => Store.get(id), put: (id, d) => Store.put(id, d), upsertMeta: m => Store.upsertMeta(m),
+  del: id => { Store.del(id); Store.setIndex(Store.index().filter(x => x.id !== id)); },
+  tombs: () => Store.tombs(), clearTombs: ids => Store.clearTombs(ids),
+  isDirty: id => id === curId && !!saveTimer, // texto digitado ainda não gravado
+  get firstSync() { return !Store.read('bn-sync-ok', false); }
+};
+let syncing = false, syncAgain = false, syncTimer = 0;
+function setSyncStatus(msg) { $('acctStatus').textContent = msg; }
+function refreshAcct() {
+  $('acct').style.display = cloud ? '' : 'none';
+  const s = cloud && cloud.session();
+  $('acctOut').style.display = s ? 'none' : '';
+  $('acctIn').style.display = s ? '' : 'none';
+  if (s) $('acctWho').textContent = 'Conectado como ' + (s.user && s.user.email || '');
+}
+function scheduleSync() {
+  if (VIEWER || !cloud || !cloud.session()) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(syncNow, 3000);
+}
+async function syncNow() {
+  if (VIEWER || !cloud) return;
+  if (syncing) { syncAgain = true; return; }
+  syncing = true;
+  try {
+    const sess = await cloud.ensureFresh();
+    refreshAcct();
+    if (!sess) return;
+    setSyncStatus('sincronizando…');
+    if (saveTimer) saveNow();
+    const { applied, skipped } = await Sync.runSync({ cloud, store: syncStore });
+    Store.write('bn-sync-ok', true);
+    if (skipped.length) syncAgain = true; // o usuário mexeu nessas notas durante a rodada: tenta de novo depois
+    if (applied.includes(curId)) { // a nota aberta foi trocada ou removida pela nuvem
+      const left = Store.index().sort((a, b) => b.updated - a.updated);
+      loadNote(Store.get(curId) ? curId : left.length ? left[0].id : createNote());
+    }
+    if ($('notesPanel').classList.contains('open')) renderNotes();
+    setSyncStatus('sincronizado às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
+  } catch (e) {
+    setSyncStatus(/fetch|network|offline|load failed/i.test(e.message) ? 'offline — tentarei de novo' : 'erro: ' + e.message);
+  } finally {
+    syncing = false;
+    if (syncAgain) { syncAgain = false; scheduleSync(); }
+  }
+}
+if (!VIEWER) refreshAcct(); // sem sync.js (cloud nulo), esconde o painel de conta
+if (!VIEWER && cloud) {
+  const red =cloud.consumeRedirect(location.hash);
+  if (red) { history.replaceState(null, '', location.pathname + location.search); toast('Conectado! Sincronizando…'); }
+  else if (/error_description=/.test(location.hash)) {
+    toast(decodeURIComponent((location.hash.match(/error_description=([^&]*)/) || [])[1] || 'Link inválido').replace(/\+/g, ' '), 5000);
+    history.replaceState(null, '', location.pathname + location.search);
+  }
+  refreshAcct();
+  $('acctSend').onclick = async () => {
+    const email = $('acctEmail').value.trim();
+    if (!email) { toast('Digite seu e-mail'); return; }
+    $('acctSend').disabled = true;
+    try { await cloud.sendMagicLink(email, location.origin + location.pathname); toast('Link enviado! Confira seu e-mail.', 4000); }
+    catch (e) { toast('Não consegui enviar: ' + e.message, 5000); }
+    $('acctSend').disabled = false;
+  };
+  $('acctSync').onclick = () => syncNow();
+  $('acctExit').onclick = () => { cloud.signOut(); refreshAcct(); toast('Saiu. As notas continuam neste aparelho.'); };
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') { if (saveTimer) saveNow(); clearTimeout(syncTimer); syncNow(); } // salvou e já fechou: sobe agora
+    else syncNow();
+  });
+  window.addEventListener('online', () => syncNow());
+}
 if (!VIEWER) {
   $('btnNotes').onclick = () => { if (saveTimer) saveNow(); renderNotes(); $('notesPanel').classList.add('open'); };
   $('noteClose').onclick = () => $('notesPanel').classList.remove('open');
   $('noteNew').onclick = () => { loadNote(createNote()); $('notesPanel').classList.remove('open'); toast('Nova nota criada'); };
   initNotes();
+  syncNow();
 }
 layout();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
