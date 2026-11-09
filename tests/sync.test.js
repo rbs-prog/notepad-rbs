@@ -159,3 +159,74 @@ test('signOut: apaga a sessão mesmo se o logout remoto falhar', async () => {
   assert.equal(storage.getItem('bn-sync'), null);
   await new Promise(r => setTimeout(r, 0)); // a falha remota não pode estourar como rejeição não tratada
 });
+
+// ---------- cliente: notas na nuvem ----------
+const NOW = 1000;
+const withSession = handler => { const t = setup(handler, NOW); seed(t.storage, sess(NOW + 3600)); return t; };
+
+test('listNotes: pede só id, updated e deleted, com a sessão do usuário', async () => {
+  const rows = [{ id: 'a', updated: 1, deleted: false }];
+  const { client, calls } = withSession(() => resp(200, rows));
+  assert.deepEqual(await client.listNotes(), rows);
+  assert.equal(calls[0].url, 'https://x.supabase.co/rest/v1/notes?select=id,updated,deleted');
+  assert.equal(calls[0].method, 'GET');
+  assert.equal(calls[0].headers.Authorization, 'Bearer AT');
+  assert.equal(calls[0].headers.apikey, 'ANON');
+});
+test('listNotes: sem sessão lança "sem sessão" e não chama a rede', async () => {
+  const { client, calls } = setup(() => assert.fail('sem rede'));
+  await assert.rejects(() => client.listNotes(), { message: 'sem sessão' });
+  assert.equal(calls.length, 0);
+});
+test('getNote: devolve a linha pedida por id', async () => {
+  const row = { id: 'a b', title: 't', custom: false, updated: 2, deleted: false, data: { boxes: [] } };
+  const { client, calls } = withSession(() => resp(200, [row]));
+  assert.deepEqual(await client.getNote('a b'), row);
+  assert.equal(calls[0].url, 'https://x.supabase.co/rest/v1/notes?id=eq.' + encodeURIComponent('a b') + '&select=*');
+});
+test('getNote: devolve null quando não há linha', async () => {
+  const { client } = withSession(() => resp(200, []));
+  assert.equal(await client.getNote('zzz'), null);
+});
+test('putNote: usa upsert por user_id,id e não envia user_id', async () => {
+  const { client, calls } = withSession(() => resp(201, {}));
+  const n = { id: 'a', title: 'Oi', custom: true, updated: 7, deleted: false, data: { boxes: [], strokes: [], pad: '' } };
+  await client.putNote({ ...n, user_id: 'intruso' });
+  assert.equal(calls[0].method, 'POST');
+  assert.equal(calls[0].url, 'https://x.supabase.co/rest/v1/notes?on_conflict=user_id,id');
+  assert.equal(calls[0].headers.Prefer, 'resolution=merge-duplicates');
+  assert.deepEqual(calls[0].body, n);
+});
+test('putNote: resposta 401 renova uma vez e tenta de novo', async () => {
+  let rest = 0;
+  const { client, calls } = withSession(url => {
+    if (url.includes('/auth/v1/token')) return resp(200, { access_token: 'AT2', refresh_token: 'RT2', expires_in: 3600 });
+    return ++rest === 1 ? resp(401, { message: 'JWT expired' }) : resp(201, {});
+  });
+  await client.putNote({ id: 'a', title: 't', custom: false, updated: 1, deleted: false, data: {} });
+  assert.equal(calls.length, 3);
+  assert.equal(calls[2].headers.Authorization, 'Bearer AT2');
+});
+test('putNote: segundo 401 lança', async () => {
+  const { client, calls } = withSession(url => url.includes('/auth/v1/token')
+    ? resp(200, { access_token: 'AT2', refresh_token: 'RT2', expires_in: 3600 })
+    : resp(401, { message: 'JWT expired' }));
+  await assert.rejects(() => client.putNote({ id: 'a', title: 't', custom: false, updated: 1, deleted: false, data: {} }), { message: 'JWT expired' });
+  assert.equal(calls.length, 3);
+});
+test('listNotes: erro de rede lança e não altera a sessão guardada', async () => {
+  const { client, storage } = withSession(() => { throw new TypeError('Failed to fetch'); });
+  const before = storage.getItem('bn-sync');
+  await assert.rejects(() => client.listNotes(), { message: 'Failed to fetch' });
+  assert.equal(storage.getItem('bn-sync'), before);
+});
+test('listNotes: erro 500 lança com a mensagem do servidor', async () => {
+  const { client } = withSession(() => resp(500, { message: 'boom' }));
+  await assert.rejects(() => client.listNotes(), { message: 'boom' });
+});
+test('putNote: nota grande (5 mil traços) vai inteira no corpo', async () => {
+  const strokes = Array.from({ length: 5000 }, (_, i) => ({ id: 's' + i, pts: [[i, i], [i + 1, i + 1]] }));
+  const { client, calls } = withSession(() => resp(201, {}));
+  await client.putNote({ id: 'g', title: 'g', custom: false, updated: 1, deleted: false, data: { boxes: [], strokes, pad: '' } });
+  assert.equal(calls[0].body.data.strokes.length, 5000);
+});

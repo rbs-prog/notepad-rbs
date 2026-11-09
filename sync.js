@@ -66,6 +66,17 @@ Sync.createClient = function createClient({ url, key, fetch: f, storage, now }) 
     const bin = typeof atob === 'function' ? atob(b + '==='.slice((b.length + 3) % 4)) : Buffer.from(b, 'base64').toString('binary');
     return decodeURIComponent(Array.from(bin, c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join(''));
   };
+  async function refresh(s) {
+    const r = await doFetch(url + '/auth/v1/token?grant_type=refresh_token', {
+      method: 'POST', headers: hdr(), body: JSON.stringify({ refresh_token: s.refresh_token })
+    });
+    if (r.status >= 400 && r.status < 500) { clear(); return null; }
+    if (!r.ok) throw new Error(await errMsg(r));
+    const j = await r.json();
+    const ns = { access_token: j.access_token, refresh_token: j.refresh_token || s.refresh_token, expires_at: nowS() + (Number(j.expires_in) || 3600), user: s.user };
+    write(ns);
+    return ns;
+  }
   const client = {
     async sendMagicLink(email, redirectTo) {
       const r = await doFetch(url + '/auth/v1/otp?redirect_to=' + encodeURIComponent(redirectTo), {
@@ -86,15 +97,35 @@ Sync.createClient = function createClient({ url, key, fetch: f, storage, now }) 
       const s = read();
       if (!s) return null;
       if (s.expires_at - nowS() > 60) return s;
-      const r = await doFetch(url + '/auth/v1/token?grant_type=refresh_token', {
-        method: 'POST', headers: hdr(), body: JSON.stringify({ refresh_token: s.refresh_token })
-      });
-      if (r.status >= 400 && r.status < 500) { clear(); return null; }
+      return refresh(s);
+    },
+    // Chamada autenticada ao PostgREST; em 401 renova a sessão e tenta mais uma vez.
+    async rest(path, opts = {}) {
+      let s = await client.ensureFresh();
+      if (!s) throw new Error('sem sessão');
+      const go = () => doFetch(url + '/rest/v1/' + path, { ...opts, headers: hdr({ Authorization: 'Bearer ' + s.access_token, ...opts.headers }) });
+      let r = await go();
+      if (r.status === 401) {
+        s = await refresh(s);
+        if (!s) throw new Error('sem sessão');
+        r = await go();
+      }
       if (!r.ok) throw new Error(await errMsg(r));
-      const j = await r.json();
-      const ns = { access_token: j.access_token, refresh_token: j.refresh_token || s.refresh_token, expires_at: nowS() + (Number(j.expires_in) || 3600), user: s.user };
-      write(ns);
-      return ns;
+      return r;
+    },
+    async listNotes() {
+      return (await client.rest('notes?select=id,updated,deleted')).json();
+    },
+    async getNote(id) {
+      const rows = await (await client.rest('notes?id=eq.' + encodeURIComponent(id) + '&select=*')).json();
+      return rows[0] || null;
+    },
+    async putNote({ id, title, custom, updated, deleted, data }) {
+      await client.rest('notes?on_conflict=user_id,id', {
+        method: 'POST',
+        headers: { Prefer: 'resolution=merge-duplicates' },
+        body: JSON.stringify({ id, title, custom, updated, deleted, data })
+      });
     },
     signOut() {
       const s = read();
