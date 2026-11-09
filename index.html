@@ -1020,22 +1020,31 @@ function renderNotes() {
 }
 // ---------- sincronização entre aparelhos ----------
 // Notas gravam primeiro no aparelho; aqui elas sobem/descem do Supabase (vale a edição mais recente). Ver sync.js.
-const cloud = Sync.createClient({ url: 'https://' + SUPA_HOST, key: SUPA_KEY, storage: localStorage });
+// Se sync.js não carregar, o app segue funcionando só no aparelho (cloud = null).
+const cloud = typeof Sync !== 'undefined' ? Sync.createClient({ url: 'https://' + SUPA_HOST, key: SUPA_KEY, storage: localStorage }) : null;
+const syncStore = {
+  index: () => Store.index(), get: id => Store.get(id), put: (id, d) => Store.put(id, d), upsertMeta: m => Store.upsertMeta(m),
+  del: id => { Store.del(id); Store.setIndex(Store.index().filter(x => x.id !== id)); },
+  tombs: () => Store.tombs(), clearTombs: ids => Store.clearTombs(ids),
+  isDirty: id => id === curId && !!saveTimer, // texto digitado ainda não gravado
+  get firstSync() { return !Store.read('bn-sync-ok', false); }
+};
 let syncing = false, syncAgain = false, syncTimer = 0;
 function setSyncStatus(msg) { $('acctStatus').textContent = msg; }
 function refreshAcct() {
-  const s = cloud.session();
+  $('acct').style.display = cloud ? '' : 'none';
+  const s = cloud && cloud.session();
   $('acctOut').style.display = s ? 'none' : '';
   $('acctIn').style.display = s ? '' : 'none';
   if (s) $('acctWho').textContent = 'Conectado como ' + (s.user && s.user.email || '');
 }
 function scheduleSync() {
-  if (VIEWER || !cloud.session()) return;
+  if (VIEWER || !cloud || !cloud.session()) return;
   clearTimeout(syncTimer);
   syncTimer = setTimeout(syncNow, 3000);
 }
 async function syncNow() {
-  if (VIEWER) return;
+  if (VIEWER || !cloud) return;
   if (syncing) { syncAgain = true; return; }
   syncing = true;
   try {
@@ -1044,39 +1053,10 @@ async function syncNow() {
     if (!sess) return;
     setSyncStatus('sincronizando…');
     if (saveTimer) saveNow();
-    const local = Store.index().filter(n => !Sync.isEmptyNote(Store.get(n.id))).map(n => ({ id: n.id, updated: n.updated }));
-    const remote = await cloud.listNotes();
-    const firstSync = !Store.read('bn-sync-ok', false);
-    const p = Sync.planSync({ local, deleted: Store.tombs(), remote });
-    let changedCur = false;
-    for (const id of p.pull) {
-      const r = await cloud.getNote(id);
-      if (!r) continue;
-      Store.put(id, r.data); Store.upsertMeta({ id, title: r.title, custom: r.custom, updated: r.updated });
-      if (id === curId) changedCur = true;
-    }
-    for (const id of p.push) {
-      const m = noteMeta(id), d = Store.get(id);
-      if (m && d) await cloud.putNote({ id, title: m.title, custom: m.custom, updated: m.updated, deleted: false, data: d });
-    }
-    for (const id of p.pushDelete) {
-      const t = Store.tombs().find(x => x.id === id);
-      await cloud.putNote({ id, title: '', custom: false, updated: t ? t.updated : Date.now(), deleted: true, data: {} });
-    }
-    for (const id of p.dropLocal) {
-      Store.del(id); Store.setIndex(Store.index().filter(x => x.id !== id));
-      if (id === curId) changedCur = true;
-    }
-    Store.clearTombs(p.clearDeleted);
-    // primeira sincronização num aparelho que já recebeu notas: tira a nota vazia que o app cria sozinho
-    if (firstSync && remote.some(r => !r.deleted)) {
-      Store.index().filter(n => !n.custom && Sync.isEmptyNote(Store.get(n.id))).forEach(n => {
-        Store.del(n.id); Store.setIndex(Store.index().filter(x => x.id !== n.id));
-        if (n.id === curId) changedCur = true;
-      });
-    }
+    const { applied, skipped } = await Sync.runSync({ cloud, store: syncStore });
     Store.write('bn-sync-ok', true);
-    if (changedCur) {
+    if (skipped.length) syncAgain = true; // o usuário mexeu nessas notas durante a rodada: tenta de novo depois
+    if (applied.includes(curId)) { // a nota aberta foi trocada ou removida pela nuvem
       const left = Store.index().sort((a, b) => b.updated - a.updated);
       loadNote(Store.get(curId) ? curId : left.length ? left[0].id : createNote());
     }
@@ -1089,8 +1069,9 @@ async function syncNow() {
     if (syncAgain) { syncAgain = false; scheduleSync(); }
   }
 }
-if (!VIEWER) {
-  const red = cloud.consumeRedirect(location.hash);
+if (!VIEWER) refreshAcct(); // sem sync.js (cloud nulo), esconde o painel de conta
+if (!VIEWER && cloud) {
+  const red =cloud.consumeRedirect(location.hash);
   if (red) { history.replaceState(null, '', location.pathname + location.search); toast('Conectado! Sincronizando…'); }
   else if (/error_description=/.test(location.hash)) {
     toast(decodeURIComponent((location.hash.match(/error_description=([^&]*)/) || [])[1] || 'Link inválido').replace(/\+/g, ' '), 5000);
@@ -1107,7 +1088,10 @@ if (!VIEWER) {
   };
   $('acctSync').onclick = () => syncNow();
   $('acctExit').onclick = () => { cloud.signOut(); refreshAcct(); toast('Saiu. As notas continuam neste aparelho.'); };
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncNow(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') { if (saveTimer) saveNow(); clearTimeout(syncTimer); syncNow(); } // salvou e já fechou: sobe agora
+    else syncNow();
+  });
   window.addEventListener('online', () => syncNow());
 }
 if (!VIEWER) {

@@ -230,3 +230,92 @@ test('putNote: nota grande (5 mil traços) vai inteira no corpo', async () => {
   await client.putNote({ id: 'g', title: 'g', custom: false, updated: 1, deleted: false, data: { boxes: [], strokes, pad: '' } });
   assert.equal(calls[0].body.data.strokes.length, 5000);
 });
+
+// ---------- runSync: aplica o plano sem pisar no que o usuário digita ----------
+const snapshot = o => JSON.parse(JSON.stringify(o));
+function mkStore({ notes = {}, tombs = [], dirty = [], firstSync = false } = {}) {
+  const s = { notes: snapshot(notes), tombsList: snapshot(tombs), dirty: new Set(dirty), firstSync };
+  s.index = () => Object.entries(s.notes).map(([id, n]) => ({ id, ...n.meta }));
+  s.get = id => (s.notes[id] ? s.notes[id].data : null);
+  s.put = (id, data) => { (s.notes[id] = s.notes[id] || { meta: {} }).data = data; };
+  s.upsertMeta = m => { const { id, ...meta } = m; (s.notes[id] = s.notes[id] || { data: null }).meta = meta; };
+  s.del = id => { delete s.notes[id]; };
+  s.tombs = () => s.tombsList;
+  s.clearTombs = ids => { s.tombsList = s.tombsList.filter(t => !ids.includes(t.id)); };
+  s.isDirty = id => s.dirty.has(id);
+  return s;
+}
+function mkCloud(remoteRows = [], onGet) {
+  const remote = new Map(remoteRows.map(r => [r.id, r]));
+  const puts = [];
+  return {
+    remote, puts,
+    listNotes: async () => [...remote.values()].map(({ id, updated, deleted }) => ({ id, updated, deleted })),
+    getNote: async id => { if (onGet) onGet(id); return remote.get(id) || null; },
+    putNote: async n => { puts.push(snapshot(n)); remote.set(n.id, snapshot(n)); }
+  };
+}
+const note = (updated, text, extra = {}) => ({ meta: { title: text || 't', custom: false, updated, ...extra }, data: { boxes: text ? [{ id: 'b', text }] : [], strokes: [], pad: '' } });
+const rrow = (id, updated, text, deleted = false) => ({ id, title: text || 't', custom: false, updated, deleted, data: { boxes: text ? [{ id: 'b', text }] : [], strokes: [], pad: '' } });
+
+test('runSync: aparelho novo baixa a nota, não sobe a vazia e remove a vazia na primeira sincronização', async () => {
+  const store = mkStore({ notes: { ph: note(10, '') }, firstSync: true });
+  const cloud = mkCloud([rrow('rb', 50, 'remota')]);
+  const r = await Sync.runSync({ cloud, store });
+  assert.deepEqual(store.index().map(n => n.id), ['rb']);
+  assert.equal(store.get('rb').boxes[0].text, 'remota');
+  assert.equal(cloud.puts.length, 0);
+  assert.deepEqual(r.applied.sort(), ['ph', 'rb']);
+});
+test('runSync: sobe nota local nova e propaga a exclusão com o momento da lápide', async () => {
+  const store = mkStore({ notes: { n1: note(20, 'nova') }, tombs: [{ id: 'old', updated: 33 }] });
+  const cloud = mkCloud([rrow('old', 5, 'velha')]);
+  await Sync.runSync({ cloud, store });
+  const byId = Object.fromEntries(cloud.puts.map(p => [p.id, p]));
+  assert.equal(byId.n1.deleted, false);
+  assert.equal(byId.n1.updated, 20);
+  assert.equal(byId.old.deleted, true);
+  assert.equal(byId.old.updated, 33);
+  assert.deepEqual(store.tombsList, []);
+});
+test('runSync: edição feita durante o download não é sobrescrita pelo pull', async () => {
+  const store = mkStore({ notes: { x: note(10, 'antigo') } });
+  const cloud = mkCloud([rrow('x', 50, 'do outro aparelho')], id => { // o usuário digita enquanto getNote espera a rede
+    store.put(id, { boxes: [{ id: 'b', text: 'digitei agora' }], strokes: [], pad: '' });
+    store.upsertMeta({ id, title: 't', custom: false, updated: 60 });
+  });
+  const r = await Sync.runSync({ cloud, store });
+  assert.equal(store.get('x').boxes[0].text, 'digitei agora');
+  assert.deepEqual(r.skipped, ['x']);
+  assert.deepEqual(r.applied, []);
+});
+test('runSync: nota com texto pendente de gravação (isDirty) não é sobrescrita pelo pull', async () => {
+  const store = mkStore({ notes: { x: note(10, 'antigo') }, dirty: ['x'] });
+  const cloud = mkCloud([rrow('x', 50, 'remoto')]);
+  const r = await Sync.runSync({ cloud, store });
+  assert.equal(store.get('x').boxes[0].text, 'antigo');
+  assert.deepEqual(r.skipped, ['x']);
+});
+test('runSync: dropLocal também respeita edição em andamento', async () => {
+  const store = mkStore({ notes: { x: note(10, 'antigo') }, dirty: ['x'] });
+  const cloud = mkCloud([rrow('x', 50, '', true)]);
+  const r = await Sync.runSync({ cloud, store });
+  assert.ok(store.get('x'));
+  assert.deepEqual(r.skipped, ['x']);
+});
+test('runSync: nota esvaziada que já existe na nuvem sobe vazia em vez de ser rebaixada', async () => {
+  const store = mkStore({ notes: { x: note(90, '') } });
+  const cloud = mkCloud([rrow('x', 50, 'texto antigo')]);
+  const r = await Sync.runSync({ cloud, store });
+  assert.equal(store.get('x').boxes.length, 0);
+  assert.equal(cloud.puts.length, 1);
+  assert.equal(cloud.puts[0].id, 'x');
+  assert.deepEqual(r.applied, []);
+});
+test('runSync: nota vazia que nunca foi para a nuvem não sobe', async () => {
+  const store = mkStore({ notes: { ph: note(10, '') }, firstSync: false });
+  const cloud = mkCloud([]);
+  await Sync.runSync({ cloud, store });
+  assert.equal(cloud.puts.length, 0);
+  assert.ok(store.get('ph'));
+});

@@ -41,6 +41,53 @@ Sync.isEmptyNote = function isEmptyNote(data) {
   return !pad;
 };
 
+// Uma rodada de sincronização. Faz toda a rede primeiro (downloads e envios) e só então aplica as mudanças
+// locais, de uma vez e sem await, recusando as notas que o usuário mexeu no meio do caminho (ficam em `skipped`
+// para a próxima rodada). store: index(), get(id), put(id, data), upsertMeta(meta), del(id) (apaga dados e índice),
+// tombs(), clearTombs(ids), isDirty(id), firstSync. Devolve { applied: ids mudados localmente, skipped: ids adiados }.
+Sync.runSync = async function runSync({ cloud, store }) {
+  const remote = await cloud.listNotes();
+  const remoteIds = new Set(remote.map(r => r.id));
+  const snap = new Map(store.index().map(n => [n.id, n.updated]));
+  // nota vazia só entra se já existe na nuvem (esvaziar uma nota sincronizada é uma edição, não um rascunho novo)
+  const local = store.index().filter(n => remoteIds.has(n.id) || !Sync.isEmptyNote(store.get(n.id))).map(n => ({ id: n.id, updated: n.updated }));
+  const p = Sync.planSync({ local, deleted: store.tombs(), remote });
+  const fetched = new Map();
+  for (const id of p.pull) { const r = await cloud.getNote(id); if (r && !r.deleted) fetched.set(id, r); }
+  for (const id of p.push) {
+    const m = store.index().find(n => n.id === id), d = store.get(id);
+    if (m && d) await cloud.putNote({ id, title: m.title, custom: m.custom, updated: m.updated, deleted: false, data: d });
+  }
+  for (const id of p.pushDelete) {
+    const t = store.tombs().find(x => x.id === id);
+    await cloud.putNote({ id, title: '', custom: false, updated: t ? t.updated : Date.now(), deleted: true, data: {} });
+  }
+  // --- daqui até o fim não há await: o usuário não consegue digitar no meio ---
+  const applied = [], skipped = [];
+  const untouched = id => {
+    if (store.isDirty(id)) return false;
+    const m = store.index().find(n => n.id === id);
+    return snap.has(id) ? !!m && m.updated === snap.get(id) : !m;
+  };
+  for (const [id, r] of fetched) {
+    if (!untouched(id)) { skipped.push(id); continue; }
+    store.put(id, r.data); store.upsertMeta({ id, title: r.title, custom: r.custom, updated: r.updated });
+    applied.push(id);
+  }
+  for (const id of p.dropLocal) {
+    if (!untouched(id)) { skipped.push(id); continue; }
+    store.del(id); applied.push(id);
+  }
+  store.clearTombs(p.clearDeleted);
+  // primeira sincronização num aparelho que recebeu notas: tira a nota vazia que o app cria sozinho
+  if (store.firstSync && remote.some(r => !r.deleted)) {
+    for (const n of store.index()) {
+      if (!n.custom && Sync.isEmptyNote(store.get(n.id)) && !store.isDirty(n.id)) { store.del(n.id); applied.push(n.id); }
+    }
+  }
+  return { applied, skipped };
+};
+
 // Cliente Supabase (Auth + PostgREST) sem supabase-js. fetch, storage e now são injetáveis para teste.
 Sync.createClient = function createClient({ url, key, fetch: f, storage, now }) {
   const doFetch = f || ((...a) => fetch(...a));
