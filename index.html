@@ -17,9 +17,37 @@
   #bar .sp { flex: 1; }
   #scroller { flex: 1; min-height: 0; position: relative; overflow-y: auto; overscroll-behavior: contain; }
   #page { position: relative; width: 100%; }
-  .tb { position: absolute; max-width: calc(100% - 8px); border: 1px dashed transparent; outline: 0; resize: none; overflow: hidden;
-        padding: 4px 8px; font-size: 20px; line-height: 32px; background: transparent; color: #111; font-family: inherit; }
+  .tb { position: absolute; max-width: calc(100% - 8px); border: 1px dashed transparent; outline: 0; overflow: hidden;
+        padding: 4px 8px; font-size: 20px; line-height: 32px; background: transparent; color: #111; font-family: inherit;
+        white-space: pre-wrap; overflow-wrap: anywhere; min-height: 42px; user-select: text; -webkit-user-select: text; }
   .tb:focus { border-color: #9ab; background: rgba(255, 250, 190, .3); }
+  .tb h1, #pad h1 { font-size: 30px; line-height: 40px; margin: 0; font-weight: 700; }
+  .tb h2, #pad h2 { font-size: 24px; line-height: 34px; margin: 0; font-weight: 600; }
+  .tb div, #pad div, .tb p, #pad p { margin: 0; }
+  #pad { position: absolute; top: 0; left: 0; width: 100%; padding: 8px 12px; font-size: 20px; line-height: 32px; color: #111; outline: 0;
+         white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+  #pad:empty { display: none; }
+  body.padmode #pad:empty { display: block; }
+  #fbar { display: none; flex: none; gap: 6px; padding: 6px 8px; border-bottom: 1px solid #ddd; background: #eef3fb; align-items: center; overflow-x: auto; }
+  body.editing:not(.viewer) #fbar { display: flex; }
+  #fbar button { flex: none; font-size: 15px; padding: 6px 10px; border: 1px solid #bbb; border-radius: 8px; background: #fff; white-space: nowrap; }
+  #pop { position: fixed; z-index: 15; display: none; flex-wrap: wrap; gap: 6px; padding: 8px; max-width: 260px; background: #fff; border: 1px solid #bbb;
+         border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,.3); }
+  #pop button { font-size: 15px; padding: 8px 12px; border: 1px solid #bbb; border-radius: 8px; background: #fff; }
+  #pop button.sw { width: 36px; height: 36px; padding: 0; border-radius: 50%; border: 2px solid #999; }
+  #pop button.sw.none { background: linear-gradient(135deg, #fff 45%, #e33 45%, #e33 55%, #fff 55%); }
+  #dot { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 1px solid #666; vertical-align: -2px; background: #1a3cff; }
+  #notesPanel { position: fixed; inset: 0; z-index: 12; display: none; flex-direction: column; background: #fff; }
+  #notesPanel.open { display: flex; }
+  #notesPanel header { flex: none; display: flex; gap: 8px; align-items: center; padding: 10px 12px; border-bottom: 1px solid #ddd; background: #f6f6f6; }
+  #notesPanel header strong { flex: 1; font-size: 18px; }
+  #notesPanel button { font-size: 15px; padding: 8px 12px; border: 1px solid #bbb; border-radius: 8px; background: #fff; }
+  #notesList { flex: 1; overflow-y: auto; }
+  .nrow { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-bottom: 1px solid #eee; }
+  .nrow.cur { background: #eaf2ff; }
+  .nrow .nopen { flex: 1; min-width: 0; text-align: left; border: 0 !important; background: transparent !important; padding: 8px 0 !important; }
+  .nrow .nopen b { display: block; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nrow .nopen small { color: #666; }
   .grip { position: absolute; width: 30px; height: 22px; line-height: 22px; text-align: center; font-size: 16px; color: #567;
           background: #e6ecf2; border-radius: 6px 6px 0 0; pointer-events: none; user-select: none; }
   #stage { position: relative; width: 100%; }
@@ -53,22 +81,35 @@
 </head>
 <body>
 <div id="bar">
+  <button id="btnNotes">📚 Notas</button>
   <button id="btnPen" class="on">✏️ Caneta</button>
   <button id="btnMarker">🖍️ Marca-texto</button>
+  <button id="btnColor" data-pop title="Cor">🎨 <span id="dot"></span></button>
+  <button id="btnShape" data-pop>🔷 Formas</button>
   <button id="btnLaser">🔴 Laser</button>
   <button id="btnEraser">🧽 Borracha</button>
   <button id="btnSelect">⬚ Selecionar</button>
   <button id="btnKb">🔤 Texto</button>
+  <button id="btnPad">📝 Notepad</button>
   <button id="btnLive">📡 Ao vivo</button>
   <span class="sp"></span>
   <button id="btnPaste" disabled>📥 Colar</button>
   <button id="btnUndo" disabled>↩️ Desfazer</button>
   <button id="btnClear">Limpar</button>
 </div>
+<div id="fbar">
+  <button data-f="normal">Normal</button>
+  <button data-f="h1"><b>Título</b></button>
+  <button data-f="h2"><b>Subtítulo</b></button>
+  <button data-f="bold"><b>N</b></button>
+  <button id="fColor" data-pop data-f="color">A cor ▾</button>
+  <button id="fBg" data-pop data-f="bg">🖍 fundo ▾</button>
+</div>
 <div id="vbar"><span id="vstatus">Conectando…</span><span class="sp"></span><button id="btnFollow">📍 Seguindo o celular</button></div>
 <div id="scroller">
   <div id="stage">
     <div id="page">
+      <div id="pad" spellcheck="false"></div>
       <canvas id="ink"></canvas>
       <canvas id="laser"></canvas>
       <div id="selRect"></div>
@@ -77,6 +118,11 @@
   </div>
 </div>
 <div id="toast"></div>
+<div id="pop"></div>
+<div id="notesPanel">
+  <header><strong>📚 Minhas notas</strong><button id="noteNew">＋ Nova</button><button id="noteClose">Fechar</button></header>
+  <div id="notesList"></div>
+</div>
 <div id="livePanel">
   <div class="card">
     <strong>📡 Transmissão ao vivo</strong>
@@ -105,6 +151,39 @@ const $ = id => document.getElementById(id);
 const scroller = $('scroller'), stage = $('stage'), page = $('page'), canvas = $('ink');
 const ctx = canvas.getContext('2d');
 const laserCv = $('laser'), lctx = laserCv.getContext('2d');
+const padEl = $('pad');
+
+// ---------- texto formatado: limpeza do HTML (colar, carregar, receber ao vivo) ----------
+const OK_TAGS = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'DIV', 'P', 'BR', 'SPAN', 'H1', 'H2', 'H3', 'FONT']);
+const OK_COLOR = /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\)|[a-z]+)$/i;
+function cleanHtml(html) {
+  const t = document.createElement('template'); t.innerHTML = String(html || ''); // inerte: não executa nada
+  const out = document.createElement('div');
+  const walk = (src, dst) => {
+    for (const n of src.childNodes) {
+      if (n.nodeType === 3) { dst.appendChild(document.createTextNode(n.nodeValue)); continue; }
+      if (n.nodeType !== 1 || n.tagName === 'SCRIPT' || n.tagName === 'STYLE') continue;
+      if (!OK_TAGS.has(n.tagName)) { walk(n, dst); continue; }
+      const e = document.createElement(n.tagName === 'FONT' ? 'span' : n.tagName);
+      const col = n.tagName === 'FONT' ? n.getAttribute('color') : n.style && n.style.color;
+      const bg = n.style && n.style.backgroundColor, fw = n.style && n.style.fontWeight;
+      if (col && OK_COLOR.test(col)) e.style.color = col;
+      if (bg && OK_COLOR.test(bg)) e.style.backgroundColor = bg;
+      if (fw && /^(bold|[5-9]00)$/.test(fw)) e.style.fontWeight = 'bold';
+      walk(n, e); dst.appendChild(e);
+    }
+  };
+  walk(t.content, out);
+  return out.innerHTML;
+}
+function wireEditor(el, onChange) { // comportamento comum das caixas e do notepad
+  el.addEventListener('input', onChange);
+  el.addEventListener('paste', e => { // cola só texto puro: sem trazer fontes/cores de fora
+    e.preventDefault();
+    document.execCommand('insertText', false, (e.clipboardData || window.clipboardData).getData('text/plain'));
+  });
+  el.addEventListener('drop', e => e.preventDefault());
+}
 
 let boxes = [];            // caixas de texto {x, y, w, text}
 const els = new Map();     // caixa -> <textarea>
@@ -124,30 +203,77 @@ let current = null;        // traço em andamento
 let saveTimer;
 
 // ---------- persistência ----------
+// Camada de armazenamento: hoje é o localStorage do aparelho; trocar por Supabase (gravar na plataforma) mexe só aqui.
+const Store = {
+  IDX: 'bn-notas-indice', CUR: 'bn-nota-atual',
+  read(k, def) { try { const v = JSON.parse(localStorage.getItem(k) || 'null'); return v == null ? def : v; } catch (e) { return def; } },
+  write(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+  index() { return this.read(this.IDX, []); },
+  setIndex(a) { this.write(this.IDX, a); },
+  get(id) { return this.read('bn-nota-' + id, null); },
+  put(id, d) { this.write('bn-nota-' + id, d); },
+  del(id) { try { localStorage.removeItem('bn-nota-' + id); } catch (e) {} }
+};
+let curId = null;
+const noteMeta = id => Store.index().find(n => n.id === id);
+const escHtml = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const hasText = h => { const t = document.createElement('div'); t.innerHTML = cleanHtml(h || ''); return !!t.textContent.trim(); };
+function autoTitle() {
+  const first = boxes.filter(b => b.text.trim()).sort((p, q) => p.y - q.y)[0];
+  const t = (padEl.innerText.trim() || (first ? first.text.trim() : '')).split('\n')[0].trim();
+  return t ? t.slice(0, 40) : 'Nota sem título';
+}
+function saveNow() {
+  clearTimeout(saveTimer); saveTimer = 0;
+  if (VIEWER || !curId) return;
+  Store.put(curId, { boxes: boxes.filter(b => b.text.trim()).map(b => ({ id: b.id, x: b.x, y: b.y, w: b.w, text: b.text, html: b.html })), strokes, pad: padEl.innerHTML });
+  const idx = Store.index(), m = idx.find(n => n.id === curId);
+  if (m) { m.updated = Date.now(); if (!m.custom) m.title = autoTitle(); Store.setIndex(idx); }
+}
 function save() {
   if (VIEWER) return;
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    try { localStorage.setItem(KEY, JSON.stringify({ boxes: boxes.filter(b => b.text.trim()), strokes })); } catch (e) {}
-  }, 300);
+  saveTimer = setTimeout(saveNow, 300);
 }
-function load() {
-  if (VIEWER) return;
-  try {
-    const d = JSON.parse(localStorage.getItem(KEY) || 'null');
-    if (d) {
-      strokes = d.strokes || [];
-      strokes.forEach(s => { s.id = s.id || uid(); });
-      boxes = (d.boxes || []).map(b => ({ ...b, id: b.id || uid(), y: Math.max(GRIP_H, b.y) }));
-      if (d.text) boxes.unshift({ id: uid(), x: 8, y: GRIP_H, w: Math.max(120, page.clientWidth - 16), text: d.text }); // nota da versão antiga
-    }
-  } catch (e) {}
+function createNote(data) {
+  const id = uid(), idx = Store.index();
+  idx.push({ id, title: 'Nota sem título', custom: false, updated: Date.now() });
+  Store.setIndex(idx);
+  Store.put(id, data || { boxes: [], strokes: [], pad: '' });
+  return id;
+}
+function loadNote(id) {
+  if (saveTimer) saveNow();
+  boxes.slice().forEach(removeBox);
+  boxes = []; strokes = []; padEl.innerHTML = ''; undoStack.length = 0; $('btnUndo').disabled = true;
+  clearSelection();
+  curId = id; Store.write(Store.CUR, id);
+  const d = Store.get(id) || {};
+  strokes = d.strokes || [];
+  strokes.forEach(s => { s.id = s.id || uid(); });
+  boxes = (d.boxes || []).map(b => ({ ...b, id: b.id || uid(), y: Math.max(GRIP_H, b.y), text: b.text || '' }));
+  if (d.text) boxes.unshift({ id: uid(), x: 8, y: GRIP_H, w: Math.max(120, page.clientWidth - 16), text: d.text }); // nota da versão antiga
+  padEl.innerHTML = cleanHtml(d.pad || '');
+  boxes.forEach(b => addBox(b, false));
+  canvas.dataset.sig = ''; layout(); scroller.scrollTop = 0;
+  if (Live.joined) sendState();
+}
+function initNotes() {
+  let idx = Store.index();
+  if (!idx.length) { // primeira vez: traz a nota da versão anterior do app, se houver
+    const old = Store.read('bloco-notas-v1', null);
+    const id = createNote(old || undefined);
+    idx = Store.index();
+    Store.write(Store.CUR, id);
+  }
+  const cur = Store.read(Store.CUR, null);
+  loadNote(idx.some(n => n.id === cur) ? cur : idx[0].id);
 }
 
 // ---------- layout ----------
 const K = () => (window.devicePixelRatio || 1) * viewScale;
 function layout() {
-  let bottom = 0;
+  let bottom = padEl.offsetHeight;
   els.forEach((ta, b) => { bottom = Math.max(bottom, b.y + ta.offsetHeight); });
   const h = Math.max(bottom, VIEWER ? 0 : scroller.clientHeight) + 400; // sobra para desenhar abaixo do texto
   const w = page.clientWidth;
@@ -180,12 +306,13 @@ function fitViewer() {
 }
 
 // ---------- caixas de texto ----------
-const fit = ta => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; };
 function focusBox(ta) {
   // blur antes: se o campo já está focado (teclado escondido), focus() sozinho não reabre o teclado
   ta.blur(); ta.focus();
-  ta.setSelectionRange(ta.value.length, ta.value.length);
+  const r = document.createRange(); r.selectNodeContents(ta); r.collapse(false);
+  const s = getSelection(); s.removeAllRanges(); s.addRange(r);
 }
+const boxHtml = b => b.html != null ? cleanHtml(b.html) : escHtml(b.text || '').replace(/\n/g, '<br>');
 function placeBox(b) {
   const ta = els.get(b), g = grips.get(b);
   ta.style.left = b.x + 'px'; ta.style.top = b.y + 'px'; ta.style.width = b.w + 'px';
@@ -208,28 +335,34 @@ function removeBox(b) {
 function upsertBox(d) { // visualização: cria ou atualiza uma caixa vinda do celular
   let b = boxById.get(d.id);
   if (!b) { b = { ...d }; boxes.push(b); addBox(b, false); }
-  else { Object.assign(b, d); els.get(b).value = d.text; placeBox(b); fit(els.get(b)); }
+  else { Object.assign(b, d); els.get(b).innerHTML = boxHtml(b); placeBox(b); }
 }
 const boxTimers = new Map();
-const pubStroke = s => ({ id: s.id, kind: s.kind || 'pen', w: s.w, pts: s.pts.map(p => [r1(p[0]), r1(p[1]), r2(p[2])]) });
-const pubBox = b => ({ id: b.id, x: r1(b.x), y: r1(b.y), w: r1(b.w), text: b.text });
+const pubStroke = s => ({ id: s.id, kind: s.kind || 'pen', w: s.w, c: s.c, pts: s.pts.map(p => [r1(p[0]), r1(p[1]), r2(p[2])]) });
+const pubBox = b => ({ id: b.id, x: r1(b.x), y: r1(b.y), w: r1(b.w), text: b.text, html: b.html });
+let padTimer = 0;
+function sendPad() { // notepad: envia o estado mais recente, no máximo a cada ~90 ms
+  if (!Live.joined || padTimer) return;
+  padTimer = setTimeout(() => { padTimer = 0; emit('pd', { html: padEl.innerHTML }); }, 90);
+}
 function sendBox(b) { // envia só o estado mais recente, no máximo a cada ~90 ms
   if (!Live.joined || boxTimers.has(b)) return;
   boxTimers.set(b, setTimeout(() => { boxTimers.delete(b); if (boxById.has(b.id)) emit('bx', pubBox(b)); }, 90));
 }
 function addBox(b, focus) {
-  const ta = document.createElement('textarea');
-  ta.className = 'tb'; ta.rows = 1; ta.spellcheck = false; ta.value = b.text || ''; ta.readOnly = VIEWER;
+  const ta = document.createElement('div');
+  ta.className = 'tb'; ta.spellcheck = false; ta.innerHTML = boxHtml(b); ta.contentEditable = VIEWER ? 'false' : 'true';
+  if (b.text == null) b.text = ta.innerText;
+  if (b.html == null) b.html = ta.innerHTML;
   const g = document.createElement('div');
   g.className = 'grip'; g.textContent = '⠿';
   page.insertBefore(g, canvas); page.insertBefore(ta, canvas);
   els.set(b, ta); grips.set(b, g); boxById.set(b.id, b);
   placeBox(b);
-  fit(ta);
   if (VIEWER) return;
-  ta.addEventListener('input', () => { b.text = ta.value; fit(ta); layout(); save(); sendBox(b); });
+  wireEditor(ta, () => { b.html = ta.innerHTML; b.text = ta.innerText; layout(); save(); sendBox(b); });
   ta.addEventListener('blur', () => {
-    if (!ta.value.trim()) { removeBox(b); layout(); emit('bd', { id: b.id }); }
+    if (!ta.textContent.trim()) { removeBox(b); layout(); emit('bd', { id: b.id }); }
     save();
   });
   if (focus) focusBox(ta);
@@ -237,7 +370,7 @@ function addBox(b, focus) {
 function newBoxAt(x, y) {
   const pw = page.clientWidth;
   const bx = Math.max(8, Math.min(x, pw - 128));
-  const b = { id: uid(), x: bx, y: Math.max(GRIP_H, y - 16), w: Math.min(320, pw - bx - 8), text: '' };
+  const b = { id: uid(), x: bx, y: Math.max(GRIP_H, y - 16), w: Math.min(320, pw - bx - 8), text: '', html: '' };
   boxes.push(b);
   addBox(b, true);
   layout();
@@ -252,21 +385,57 @@ function tapAt(e) {
   const [x, y] = pos(e);
   newBoxAt(x, y);
 }
-function drawStroke(s) {
+const isShape = s => s.kind === 'rect' || s.kind === 'ellipse';
+const strokeColor = s => s.c || (s.kind === 'marker' ? '#ffe000' : '#1a3cff');
+const shapeBox = s => { const [a, b] = s.pts; return { x: Math.min(a[0], b[0]), y: Math.min(a[1], b[1]), w: Math.abs(a[0] - b[0]), h: Math.abs(a[1] - b[1]) }; };
+function tracePath(s) { // contorno de um traço ou forma, para desenhar e para o halo da seleção
   const p = s.pts;
-  ctx.lineCap = ctx.lineJoin = 'round';
-  if (s.kind === 'marker') { // traço único e uniforme: a transparência não escurece nas emendas
-    ctx.strokeStyle = 'rgba(255, 224, 0, 0.42)';
-    ctx.lineWidth = s.w; ctx.lineCap = 'butt';
-    ctx.beginPath(); ctx.moveTo(p[0][0], p[0][1]);
-    for (let i = 1; i < p.length; i++) ctx.lineTo(p[i][0], p[i][1]);
-    if (p.length === 1) ctx.lineTo(p[0][0] + 0.1, p[0][1]);
-    ctx.stroke();
+  ctx.beginPath();
+  if (isShape(s)) {
+    const r = shapeBox(s);
+    if (s.kind === 'rect') ctx.rect(r.x, r.y, r.w, r.h);
+    else ctx.ellipse(r.x + r.w / 2, r.y + r.h / 2, Math.max(0.5, r.w / 2), Math.max(0.5, r.h / 2), 0, 0, Math.PI * 2);
     return;
   }
-  ctx.strokeStyle = '#1a3cff';
+  ctx.moveTo(p[0][0], p[0][1]);
+  for (let i = 1; i < p.length; i++) ctx.lineTo(p[i][0], p[i][1]);
+  if (p.length === 1) ctx.lineTo(p[0][0] + 0.1, p[0][1]);
+}
+function strokeHit(s, x, y, R) { // a borracha encosta no traço?
+  if (isShape(s)) {
+    const r = shapeBox(s);
+    if (s.kind === 'rect') {
+      if (x < r.x - R || x > r.x + r.w + R || y < r.y - R || y > r.y + r.h + R) return false;
+      return Math.min(Math.abs(x - r.x), Math.abs(x - r.x - r.w)) < R || Math.min(Math.abs(y - r.y), Math.abs(y - r.y - r.h)) < R;
+    }
+    const rx = Math.max(1, r.w / 2), ry = Math.max(1, r.h / 2);
+    return Math.abs(Math.hypot((x - r.x - rx) / rx, (y - r.y - ry) / ry) - 1) * Math.min(rx, ry) < R;
+  }
+  return s.pts.some(p => Math.hypot(p[0] - x, p[1] - y) < R);
+}
+function strokeInRect(s, r) { // o retângulo de seleção pega o traço?
+  if (isShape(s)) { const b = shapeBox(s); return b.x < r.x + r.w && b.x + b.w > r.x && b.y < r.y + r.h && b.y + b.h > r.y; }
+  return s.pts.some(p => p[0] >= r.x && p[0] <= r.x + r.w && p[1] >= r.y && p[1] <= r.y + r.h);
+}
+function drawStroke(s) {
+  const p = s.pts, col = strokeColor(s);
+  ctx.lineCap = ctx.lineJoin = 'round';
+  if (isShape(s)) {
+    ctx.strokeStyle = col; ctx.lineWidth = s.w;
+    tracePath(s); ctx.stroke();
+    return;
+  }
+  if (s.kind === 'marker') { // traço único e uniforme: a transparência não escurece nas emendas
+    ctx.save();
+    ctx.globalAlpha = 0.42; ctx.strokeStyle = col;
+    ctx.lineWidth = s.w; ctx.lineCap = 'butt';
+    tracePath(s); ctx.stroke();
+    ctx.restore();
+    return;
+  }
+  ctx.strokeStyle = col;
   if (p.length === 1) {
-    ctx.beginPath(); ctx.arc(p[0][0], p[0][1], s.w * (0.5 + p[0][2]) / 2, 0, 7); ctx.fillStyle = '#1a3cff'; ctx.fill(); return;
+    ctx.beginPath(); ctx.arc(p[0][0], p[0][1], s.w * (0.5 + p[0][2]) / 2, 0, 7); ctx.fillStyle = col; ctx.fill(); return;
   }
   for (let i = 1; i < p.length; i++) {
     ctx.lineWidth = s.w * (0.4 + p[i][2] * 1.2);
@@ -281,9 +450,7 @@ function redraw() {
       ctx.lineCap = ctx.lineJoin = 'round';
       ctx.strokeStyle = 'rgba(26, 115, 232, .35)';
       ctx.lineWidth = (st.kind === 'marker' ? st.w : 6) + 8;
-      ctx.beginPath(); ctx.moveTo(st.pts[0][0], st.pts[0][1]);
-      for (let i = 1; i < st.pts.length; i++) ctx.lineTo(st.pts[i][0], st.pts[i][1]);
-      if (st.pts.length === 1) ctx.lineTo(st.pts[0][0] + 0.1, st.pts[0][1]);
+      tracePath(st);
       ctx.stroke(); ctx.restore();
     }
     drawStroke(st);
@@ -339,7 +506,7 @@ function sendState() { // estado completo: quando alguém entra ou a conexão vo
     }
     chunks.push(cur);
     chunks.forEach((c, i) => setTimeout(() => emit('state', i === 0
-      ? { part: 0, w: page.clientWidth, boxes: boxes.filter(b => b.text.trim()).map(pubBox), strokes: c, sc: scrollInfo() }
+      ? { part: 0, w: page.clientWidth, boxes: boxes.filter(b => b.text.trim()).map(pubBox), pad: padEl.innerHTML, strokes: c, sc: scrollInfo() }
       : { part: i, strokes: c }), i * 40));
   }, 200);
 }
@@ -373,8 +540,7 @@ function clearSelection() { selStrokes.clear(); selBoxes.clear(); selRectPx = nu
 function finishSelect() {
   const r = normRect(selDrag); selDrag = null;
   if (r.w < 6 && r.h < 6) { clearSelection(); return; } // toque simples: só limpa a seleção
-  const inR = (x, y) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
-  selStrokes = new Set(strokes.filter(s => s.pts.some(p => inR(p[0], p[1]))));
+  selStrokes = new Set(strokes.filter(s => strokeInRect(s, r)));
   selBoxes = new Set(boxes.filter(b => {
     const ta = els.get(b);
     return ta && b.x < r.x + r.w && b.x + ta.offsetWidth > r.x && b.y < r.y + r.h && b.y + ta.offsetHeight > r.y;
@@ -402,8 +568,8 @@ function selAction(a) {
     ss.forEach(st => st.pts.forEach(p => { minX = Math.min(minX, p[0]); minY = Math.min(minY, p[1]); }));
     bs.forEach(b => { minX = Math.min(minX, b.x); minY = Math.min(minY, b.y); });
     appClip = { minX, minY,
-      strokes: ss.map(st => ({ kind: st.kind || 'pen', w: st.w, pts: st.pts.map(p => [...p]) })),
-      boxes: bs.map(b => ({ x: b.x, y: b.y, w: b.w, text: b.text })) };
+      strokes: ss.map(st => ({ kind: st.kind || 'pen', w: st.w, c: st.c, pts: st.pts.map(p => [...p]) })),
+      boxes: bs.map(b => ({ x: b.x, y: b.y, w: b.w, text: b.text, html: b.html })) };
     $('btnPaste').disabled = false;
     toast('Copiado. Toque em 📥 Colar e depois no local.');
     clearSelection();
@@ -421,8 +587,8 @@ function selAction(a) {
 function doPaste(x, y) {
   if (!appClip) return;
   const pw = page.clientWidth, dx = x - appClip.minX, dy = y - appClip.minY;
-  const ns = appClip.strokes.map(st => ({ id: uid(), kind: st.kind, w: st.w, pts: st.pts.map(p => [p[0] + dx, p[1] + dy, p[2]]) }));
-  const nb = appClip.boxes.map(b => ({ id: uid(), x: Math.max(0, Math.min(b.x + dx, pw - 60)), y: Math.max(GRIP_H, b.y + dy), w: b.w, text: b.text }));
+  const ns = appClip.strokes.map(st => ({ id: uid(), kind: st.kind, w: st.w, c: st.c, pts: st.pts.map(p => [p[0] + dx, p[1] + dy, p[2]]) }));
+  const nb = appClip.boxes.map(b => ({ id: uid(), x: Math.max(0, Math.min(b.x + dx, pw - 60)), y: Math.max(GRIP_H, b.y + dy), w: b.w, text: b.text, html: b.html }));
   addItems(ns, nb);
   pushUndo(() => removeItems(ns, nb));
 }
@@ -431,7 +597,7 @@ function doPaste(x, y) {
 const pos = e => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
 function eraseAt(x, y) {
   const R = 14;
-  const gone = strokes.filter(s => s.pts.some(p => Math.hypot(p[0]-x, p[1]-y) < R));
+  const gone = strokes.filter(s => strokeHit(s, x, y, R));
   if (!gone.length) return;
   strokes = strokes.filter(s => !gone.includes(s));
   gone.forEach(s => selStrokes.delete(s));
@@ -450,14 +616,19 @@ canvas.addEventListener('pointerdown', e => {
   const gb = gripAt(e); // alça de uma caixa: arrasta com dedo, caneta ou mouse
   if (gb) { drag = { b: gb, dx: x - gb.x, dy: y - gb.y }; return; }
   if (tool === 'select' && !isEraser(e)) { clearSelection(); selDrag = { x0: x, y0: y, x, y }; return; }
+  if (tool === 'shape' && !isEraser(e)) { // formas: dedo, caneta ou mouse
+    current = { id: uid(), kind: shapeType === 'circle' ? 'ellipse' : 'rect', shape: shapeType, w: 2.5, c: penColor, pts: [[x, y, 0.5], [x, y, 0.5]] };
+    strokes.push(current); redraw();
+    return;
+  }
   if (e.pointerType === 'pen' || e.pointerType === 'mouse') {
     if (isEraser(e)) { current = { erase: true }; eraseAt(x, y); return; }
     if (tool === 'laser') { current = { laser: true }; laserPoint(x, y, true); pend.lz.push([r1(x), r1(y), 1]); schedFlush(); return; }
     current = tool === 'marker'
-      ? { id: uid(), kind: 'marker', w: 18, pts: [[x, y, 0.5]] }
-      : { id: uid(), kind: 'pen', w: 2.2, pts: [[x, y, e.pressure || 0.5]] };
+      ? { id: uid(), kind: 'marker', w: 18, c: markerColor, pts: [[x, y, 0.5]] }
+      : { id: uid(), kind: 'pen', w: 2.2, c: penColor, pts: [[x, y, e.pressure || 0.5]] };
     strokes.push(current);
-    emit('sb', { id: current.id, kind: current.kind, w: current.w, pts: [[r1(x), r1(y), r2(current.pts[0][2])]] });
+    emit('sb', { id: current.id, kind: current.kind, w: current.w, c: current.c, pts: [[r1(x), r1(y), r2(current.pts[0][2])]] });
     pend.sp = { id: current.id, pts: [] };
     redraw();
   } else {
@@ -474,6 +645,15 @@ canvas.addEventListener('pointermove', e => {
   } else if (selDrag) {
     [selDrag.x, selDrag.y] = pos(e);
     placeSelRect(normRect(selDrag));
+  } else if (current && current.shape) {
+    let [x, y] = pos(e);
+    const a = current.pts[0];
+    if (current.shape !== 'rect') { // círculo e quadrado: lados iguais
+      const d = Math.max(Math.abs(x - a[0]), Math.abs(y - a[1]));
+      x = a[0] + (x < a[0] ? -d : d); y = a[1] + (y < a[1] ? -d : d);
+    }
+    current.pts[1] = [x, y, 0.5];
+    redraw();
   } else if (current && (e.pointerType === 'pen' || e.pointerType === 'mouse')) {
     const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
     for (const ev of (evs.length ? evs : [e])) {
@@ -497,6 +677,12 @@ canvas.addEventListener('pointermove', e => {
 function end(e) {
   if (VIEWER) return;
   if (selDrag) { finishSelect(); return; }
+  if (current && current.shape) { // forma pronta: descarta toque sem arrasto, senão grava e envia
+    const b = shapeBox(current);
+    if (b.w < 4 && b.h < 4) { strokes = strokes.filter(s => s !== current); redraw(); }
+    else { emit('sb', pubStroke(current)); save(); }
+    current = null; return;
+  }
   flushPend(); pend.sp = null;
   if (drag) { drag = null; save(); }
   if (current) { if (current.pts) save(); current = null; }
@@ -509,13 +695,77 @@ canvas.addEventListener('pointerup', end);
 canvas.addEventListener('pointercancel', end);
 
 // ---------- UI ----------
-const TOOLS = { pen: 'btnPen', marker: 'btnMarker', laser: 'btnLaser', eraser: 'btnEraser', select: 'btnSelect' };
+const TOOLS = { pen: 'btnPen', marker: 'btnMarker', shape: 'btnShape', laser: 'btnLaser', eraser: 'btnEraser', select: 'btnSelect', pad: 'btnPad' };
 function setTool(t) {
   tool = t; pasteArmed = false;
   if (t !== 'select') clearSelection();
   for (const k in TOOLS) $(TOOLS[k]).classList.toggle('on', k === t);
+  const padMode = t === 'pad'; // notepad: o toque vai direto para o texto, sem caixas
+  document.body.classList.toggle('padmode', padMode);
+  canvas.style.pointerEvents = padMode ? 'none' : '';
+  padEl.contentEditable = padMode ? 'true' : 'false';
+  if (padMode) { padEl.style.minHeight = Math.max(120, scroller.clientHeight - 16) + 'px'; focusBox(padEl); }
+  else { padEl.style.minHeight = ''; if (document.activeElement === padEl) padEl.blur(); }
+  layout(); refreshColorDot();
 }
-for (const k in TOOLS) $(TOOLS[k]).onclick = () => setTool(k);
+for (const k in TOOLS) if (k !== 'shape') $(TOOLS[k]).onclick = () => setTool(k);
+
+// ---------- cores, formas e menu flutuante ----------
+const PALETTE = ['#111111', '#1a3cff', '#e53935', '#1e9e3a', '#fb8c00', '#8e24aa', '#ffe000', '#00acc1'];
+const saved = Store.read('bn-cores', {});
+let penColor = saved.pen || '#1a3cff', markerColor = saved.marker || '#ffe000', shapeType = saved.shape || 'rect';
+const toolColor = () => tool === 'marker' ? markerColor : penColor;
+function refreshColorDot() { $('dot').style.background = toolColor(); }
+const saveColors = () => Store.write('bn-cores', { pen: penColor, marker: markerColor, shape: shapeType });
+let popOwner = null;
+function closePop() { $('pop').style.display = 'none'; popOwner = null; }
+function openPop(anchor, items) { // items: {label} ou {color, label}, cada um com fn
+  if (popOwner === anchor) { closePop(); return; }
+  const p = $('pop'); p.innerHTML = '';
+  items.forEach(it => {
+    const b = document.createElement('button'); b.type = 'button';
+    if (it.color != null) { b.className = 'sw' + (it.color === 'transparent' ? ' none' : ''); b.style.background = it.color; b.title = it.label || ''; }
+    else b.textContent = it.label;
+    b.onclick = () => { closePop(); it.fn(); };
+    p.appendChild(b);
+  });
+  p.style.display = 'flex'; popOwner = anchor;
+  const r = anchor.getBoundingClientRect();
+  p.style.top = (r.bottom + 4) + 'px';
+  p.style.left = Math.max(4, Math.min(r.left, innerWidth - p.offsetWidth - 4)) + 'px';
+}
+// toques no menu e na barra de formatação não tiram o foco (nem o teclado) do texto
+['pop', 'fbar'].forEach(id => $(id).addEventListener('pointerdown', e => e.preventDefault()));
+document.addEventListener('pointerdown', e => { if (!e.target.closest('#pop, [data-pop]')) closePop(); }, true);
+
+$('btnColor').onclick = () => openPop($('btnColor'), PALETTE.map(c => ({ color: c, fn: () => {
+  if (tool === 'marker') markerColor = c; else penColor = c;
+  saveColors(); refreshColorDot();
+} })));
+const SHAPES = [['circle', '⭕ Círculo'], ['square', '⬜ Quadrado'], ['rect', '▭ Retângulo']];
+$('btnShape').onclick = () => openPop($('btnShape'), SHAPES.map(([k, label]) => ({ label, fn: () => {
+  shapeType = k; saveColors(); setTool('shape'); toast(label.slice(2) + ': arraste na página para desenhar');
+} })));
+refreshColorDot();
+
+// ---------- formatação de texto (caixas e notepad) ----------
+const TEXT_COLORS = ['#111111', '#e53935', '#1a3cff', '#1e9e3a', '#fb8c00', '#8e24aa', '#ffffff'];
+const BG_COLORS = ['transparent', '#fff176', '#a5d6a7', '#90caf9', '#f8bbd0', '#ffcc80'];
+const fmt = (cmd, val) => { document.execCommand('styleWithCSS', false, true); document.execCommand(cmd, false, val); };
+$('fbar').addEventListener('click', e => {
+  const a = e.target.closest('button') && e.target.closest('button').dataset.f;
+  if (a === 'normal') fmt('formatBlock', '<div>');
+  else if (a === 'h1') fmt('formatBlock', '<h1>');
+  else if (a === 'h2') fmt('formatBlock', '<h2>');
+  else if (a === 'bold') fmt('bold');
+  else if (a === 'color') openPop($('fColor'), TEXT_COLORS.map(c => ({ color: c, fn: () => fmt('foreColor', c) })));
+  else if (a === 'bg') openPop($('fBg'), BG_COLORS.map(c => ({ color: c, label: c === 'transparent' ? 'sem fundo' : '', fn: () => fmt('hiliteColor', c) })));
+});
+const inEditor = el => el && el.closest && el.closest('.tb, #pad');
+document.addEventListener('focusin', e => { if (inEditor(e.target)) document.body.classList.add('editing'); });
+document.addEventListener('focusout', () => setTimeout(() => { if (!inEditor(document.activeElement)) document.body.classList.remove('editing'); }, 0));
+if (!VIEWER) wireEditor(padEl, () => { layout(); save(); sendPad(); });
+padEl.contentEditable = 'false';
 $('selBar').addEventListener('click', e => { const a = e.target.dataset && e.target.dataset.a; if (a) selAction(a); });
 $('btnPaste').onclick = () => { if (appClip) { pasteArmed = true; toast('Toque onde quer colar'); } };
 $('btnUndo').onclick = () => { const f = undoStack.pop(); if (f) f(); $('btnUndo').disabled = !undoStack.length; };
@@ -651,6 +901,7 @@ if (VIEWER) {
       strokes = []; strokeById = new Map();
       remoteW = d.w; fitViewer();
       (d.boxes || []).forEach(upsertBox);
+      padEl.innerHTML = cleanHtml(d.pad || '');
       if (d.sc) followScroll(d.sc);
     }
     (d.strokes || []).forEach(addRemoteStroke);
@@ -662,6 +913,7 @@ if (VIEWER) {
   Live.on('er', d => { strokes = strokes.filter(st => !d.ids.includes(st.id)); d.ids.forEach(id => strokeById.delete(id)); scheduleRedraw(); });
   Live.on('clr', () => { strokes = []; strokeById = new Map(); scheduleRedraw(); });
   Live.on('bx', d => { upsertBox(d); layout(); });
+  Live.on('pd', d => { padEl.innerHTML = cleanHtml(d.html); layout(); });
   Live.on('bd', d => { const b = boxById.get(d.id); if (b) { removeBox(b); layout(); } });
   Live.on('lz', d => (d.pts || []).forEach(p => laserPoint(p[0], p[1], !!p[2])));
   Live.on('sc', followScroll);
@@ -673,7 +925,43 @@ if ('visualViewport' in window && !VIEWER) visualViewport.addEventListener('resi
   document.body.style.height = visualViewport.height + 'px'; // área útil acima do teclado
 });
 
-load(); boxes.forEach(b => addBox(b, false)); layout();
+// ---------- lista de notas ----------
+function renderNotes() {
+  const list = $('notesList'); list.innerHTML = '';
+  Store.index().sort((a, b) => b.updated - a.updated).forEach(n => {
+    const row = document.createElement('div'); row.className = 'nrow' + (n.id === curId ? ' cur' : '');
+    const open = document.createElement('button'); open.className = 'nopen';
+    const t = document.createElement('b'); t.textContent = n.title;
+    const d = document.createElement('small'); d.textContent = new Date(n.updated).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+    open.append(t, d);
+    open.onclick = () => { if (n.id !== curId) loadNote(n.id); $('notesPanel').classList.remove('open'); };
+    const ren = document.createElement('button'); ren.textContent = '✎'; ren.title = 'Renomear';
+    ren.onclick = () => {
+      const nv = prompt('Nome da nota (vazio = automático):', n.title);
+      if (nv === null) return;
+      const idx = Store.index(), m = idx.find(x => x.id === n.id);
+      m.custom = !!nv.trim(); if (m.custom) m.title = nv.trim().slice(0, 60);
+      Store.setIndex(idx); if (n.id === curId) saveNow(); renderNotes();
+    };
+    const del = document.createElement('button'); del.textContent = '🗑'; del.title = 'Apagar';
+    del.onclick = () => {
+      if (!confirm('Apagar a nota "' + n.title + '"? Não dá para desfazer.')) return;
+      const wasCur = n.id === curId;
+      if (wasCur) { clearTimeout(saveTimer); saveTimer = 0; }
+      Store.del(n.id); Store.setIndex(Store.index().filter(x => x.id !== n.id));
+      if (wasCur) { const rest = Store.index(); loadNote(rest.length ? rest.sort((a, b) => b.updated - a.updated)[0].id : createNote()); }
+      renderNotes();
+    };
+    row.append(open, ren, del); list.appendChild(row);
+  });
+}
+if (!VIEWER) {
+  $('btnNotes').onclick = () => { if (saveTimer) saveNow(); renderNotes(); $('notesPanel').classList.add('open'); };
+  $('noteClose').onclick = () => $('notesPanel').classList.remove('open');
+  $('noteNew').onclick = () => { loadNote(createNote()); $('notesPanel').classList.remove('open'); toast('Nova nota criada'); };
+  initNotes();
+}
+layout();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 </script>
 </body>
