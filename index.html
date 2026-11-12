@@ -11,10 +11,15 @@
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: #fff; font-family: system-ui, sans-serif; }
   body { display: flex; flex-direction: column; }
-  #bar { flex: none; display: flex; gap: 6px; padding: 8px; border-bottom: 1px solid #ddd; background: #f6f6f6; align-items: center; overflow-x: auto; }
-  #bar button { flex: none; font-size: 15px; padding: 8px 10px; border: 1px solid #bbb; border-radius: 8px; background: #fff; white-space: nowrap; }
+  /* menu: uma barra só, sem caixas; o grupo que não vale para o modo atual fica apagado */
+  #bar { flex: none; display: flex; flex-wrap: wrap; gap: 3px; padding: 5px 8px; border-bottom: 1px solid #ddd; background: #f6f6f6; align-items: center; }
+  #bar .grp { display: flex; gap: 3px; align-items: center; transition: opacity .15s; }
+  #bar .v { width: 1px; align-self: stretch; margin: 3px 6px; background: #bbb; }
+  #bar button { flex: none; font-size: 15px; padding: 6px 8px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: inherit; white-space: nowrap; line-height: 1.2; }
+  #bar button:hover:not(.on):not(.live):not(.wait):not(:disabled) { background: #e4e7ec; }
   #bar button.on { background: #222; color: #fff; border-color: #222; }
   #bar .sp { flex: 1; }
+  body.padmode #grpDraw, body:not(.editing) #fbar { opacity: .3; pointer-events: none; filter: grayscale(1); }
   #scroller { flex: 1; min-height: 0; position: relative; overflow-y: auto; overscroll-behavior: contain; }
   #page { position: relative; width: 100%; }
   .tb { position: absolute; max-width: calc(100% - 8px); border: 1px dashed transparent; outline: 0; overflow: hidden;
@@ -28,10 +33,7 @@
          white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
   #pad:empty { display: none; }
   body.padmode #pad:empty { display: block; }
-  #fbar { display: none; flex: none; gap: 6px; padding: 6px 8px; border-bottom: 1px solid #ddd; background: #eef3fb; align-items: center; overflow-x: auto; }
-  body.editing:not(.viewer) #fbar { display: flex; }
-  #fbar button { flex: none; font-size: 15px; padding: 6px 10px; border: 1px solid #bbb; border-radius: 8px; background: #fff; white-space: nowrap; }
-  #fbar button.on { background: #222; color: #fff; border-color: #222; }
+  #fbar { display: flex; gap: 3px; align-items: center; transition: opacity .15s; }
   #fbar .cs { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 1px solid #888; vertical-align: -2px; margin-right: 2px; }
   #pop { position: fixed; z-index: 15; display: none; flex-wrap: wrap; gap: 6px; padding: 8px; max-width: 260px; background: #fff; border: 1px solid #bbb;
          border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,.3); }
@@ -88,29 +90,39 @@
 </head>
 <body>
 <div id="bar">
-  <button id="btnNotes">📚 Notas</button>
-  <button id="btnPen" class="on">✏️ Caneta</button>
-  <button id="btnMarker">🖍️ Marca-texto</button>
-  <button id="btnColor" data-pop title="Cor">🎨 <span id="dot"></span></button>
-  <button id="btnShape" data-pop>🔷 Formas</button>
-  <button id="btnLaser">🔴 Laser</button>
-  <button id="btnEraser">🧽 Borracha</button>
-  <button id="btnSelect">⬚ Selecionar</button>
-  <button id="btnKb">🔤 Texto</button>
-  <button id="btnPad">📝 Notepad</button>
-  <button id="btnLive">📡 Ao vivo</button>
+  <button id="btnNotes" title="Notas">📚</button>
+  <span class="v"></span>
+  <div class="grp" id="grpDraw">
+    <button id="btnPen" class="on">✏️ Caneta</button>
+    <button id="btnMarker">🖍️ Marca-texto</button>
+    <button id="btnEraser">🧽 Borracha</button>
+    <button id="btnLaser">🔴 Laser</button>
+    <button id="btnShape" data-pop>🔷 Formas</button>
+    <button id="btnSelect">⬚ Selecionar</button>
+    <button id="btnColor" data-pop title="Cor">🎨 <span id="dot"></span></button>
+  </div>
+  <span class="v"></span>
+  <div class="grp">
+    <button id="btnPad">📝 Notepad</button>
+    <button id="btnKb" title="Nova caixa de texto">🔤 Texto</button>
+  </div>
+  <span class="v"></span>
+  <div id="fbar">
+    <button data-f="normal" title="Texto normal">Normal</button>
+    <button data-f="h1" title="Título"><b>T1</b></button>
+    <button data-f="h2" title="Subtítulo"><b>T2</b></button>
+    <button data-f="bold" title="Negrito"><b>N</b></button>
+    <button id="fColor" data-pop data-f="color" title="Cor do texto">A <i class="cs" id="fColorDot"></i>▾</button>
+    <button id="fBg" data-pop data-f="bg" title="Cor de fundo">🖍 <i class="cs" id="fBgDot"></i>▾</button>
+  </div>
   <span class="sp"></span>
-  <button id="btnPaste" disabled>📥 Colar</button>
-  <button id="btnUndo" disabled>↩️ Desfazer</button>
-  <button id="btnClear">Limpar</button>
-</div>
-<div id="fbar">
-  <button data-f="normal">Normal</button>
-  <button data-f="h1"><b>Título</b></button>
-  <button data-f="h2"><b>Subtítulo</b></button>
-  <button data-f="bold"><b>N</b></button>
-  <button id="fColor" data-pop data-f="color">A cor <i class="cs" id="fColorDot"></i>▾</button>
-  <button id="fBg" data-pop data-f="bg">🖍 fundo <i class="cs" id="fBgDot"></i>▾</button>
+  <button id="btnLive">📡 Ao vivo</button>
+  <span class="v"></span>
+  <div class="grp">
+    <button id="btnPaste" disabled title="Colar">📥</button>
+    <button id="btnUndo" disabled title="Desfazer">↩️</button>
+    <button id="btnClear" title="Limpar desenhos">🗑️</button>
+  </div>
 </div>
 <div id="vbar"><span id="vstatus">Conectando…</span><span class="sp"></span><button id="btnFollow">📍 Seguindo o celular</button></div>
 <div id="scroller">
@@ -743,6 +755,7 @@ function setTool(t) {
   layout(); refreshColorDot();
 }
 for (const k in TOOLS) if (k !== 'shape') $(TOOLS[k]).onclick = () => setTool(k);
+$('btnPad').onclick = () => setTool(tool === 'pad' ? 'pen' : 'pad'); // com as ferramentas apagadas no notepad, o próprio botão volta ao desenho
 
 // ---------- cores, formas e menu flutuante ----------
 const PALETTE = ['#111111', '#1a3cff', '#e53935', '#1e9e3a', '#fb8c00', '#8e24aa', '#ffe000', '#00acc1'];
